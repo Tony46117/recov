@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-
 import argparse
 import ctypes
 import hashlib
@@ -19,13 +18,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-
 VERSION = "2.0.0"
 START_TS = time.time()
 IS_WINDOWS = platform.system() == "Windows"
 IS_LINUX = platform.system() == "Linux"
 IS_MACOS = platform.system() == "Darwin"
-
 _TTY = os.environ.get("TERM", "") != "dumb" and sys.stdout.isatty()
 if _TTY:
     G, R, Y, CY, MG, B, D, N = (
@@ -34,7 +31,6 @@ if _TTY:
     )
 else:
     G = R = Y = CY = MG = B = D = N = ""
-
 MAX_FILE_SIZE = 512 * 1024 * 1024
 DUP_MIN_SIZE = 4 * 1024
 HASH_CHUNK = 1024 * 1024
@@ -43,16 +39,11 @@ DUP_TIME_BUDGET = 45
 PRUNE_EVERY = 65536
 TEMP_AGE_SECS = 72 * 3600
 QUARANTINE_DIR = str(Path.home() / ".opt_quarantine")
-
 ANSI_RE = re.compile(r"\033\[[0-9;?]*[A-Za-z]")
 LOG_LINES: list[str] = []
-
-
 def out(msg: str = "") -> None:
     print(msg, flush=True)
     LOG_LINES.append(ANSI_RE.sub("", msg))
-
-
 def run(cmd, timeout: int = 90) -> tuple[bool, str]:
     try:
         p = subprocess.run(
@@ -62,8 +53,6 @@ def run(cmd, timeout: int = 90) -> tuple[bool, str]:
         return (p.returncode == 0, p.stdout or "")
     except Exception:
         return (False, "")
-
-
 def human(n) -> str:
     n = float(n)
     for u in ("B", "KB", "MB", "GB", "TB"):
@@ -71,13 +60,9 @@ def human(n) -> str:
             return f"{n:,.1f} {u}"
         n /= 1024.0
     return f"{n:,.1f} PB"
-
-
 def trunc(s, n: int) -> str:
     s = " ".join(str(s).split())
     return s if len(s) <= n else s[: n - 1] + "…"
-
-
 def is_admin() -> bool:
     if IS_WINDOWS:
         try:
@@ -88,8 +73,6 @@ def is_admin() -> bool:
         return os.geteuid() == 0
     except AttributeError:
         return True
-
-
 def enable_windows_ansi() -> None:
     if IS_WINDOWS and _TTY:
         try:
@@ -97,29 +80,21 @@ def enable_windows_ansi() -> None:
                 ctypes.windll.kernel32.GetStdHandle(-11), 7)
         except Exception:
             pass
-
-
 @dataclass
 class ScanResult:
     junk: list[str] = field(default_factory=list)
     suspects: list[str] = field(default_factory=list)
     files_by_size: dict[int, list[str]] = field(default_factory=dict)
     file_count: int = 0
-
-
 @dataclass
 class DupGroup:
     size: int
     paths: list[str]
-
-
 @dataclass
 class Plan:
     junk: list[str] = field(default_factory=list)
     dups: list[str] = field(default_factory=list)
     quarantine: list[str] = field(default_factory=list)
-
-
 JUNK_EXT = {
     ".tmp", ".temp", ".bak", ".old", ".cache", ".crdownload", ".part",
     ".dmp", ".log", ".etl", ".evtx", ".dump", ".swp", ".swo", ".vmem",
@@ -127,26 +102,20 @@ JUNK_EXT = {
 JUNK_EXT_TUPLE = tuple(JUNK_EXT)
 JUNK_PARENTS = {"tmp", "temp", "cache", "prefetch"}
 JUNK_PATH_SEGS = ("/tmp/", "\\temp\\", "/.cache/", "\\cache\\")
-
 SUSPICIOUS_NAMES = re.compile(
     r"^(svchost|csrss|lsass|services|smss|winlogon|explorer|taskhost"
     r"|rundll32|regsvr32|dwm|conhost)\.exe$", re.IGNORECASE)
-
 MALWARE_HINTS = re.compile(
     r"(keygen|crack|patched?\.exe|nuker|trojan|rat\.exe|stealer"
     r"|miner|xmrig|coinhive|kms[-_]?pico|hwid|autokms|removewat|loader\.exe)",
     re.IGNORECASE)
-
 DOUBLE_EXT = re.compile(
     r"\.(pdf|doc|docx|xls|xlsx|jpg|jpeg|png|txt|ppt|pptx)\.(exe|scr|pif)$",
     re.IGNORECASE)
-
 SYSTEM_BIN_PREFIXES = ("c:\\windows\\", "c:\\program files",
                        "/system/", "/usr/", "/bin/", "/sbin/")
-
 RISKY_DIR_SEGS = ("/downloads/", "\\downloads\\", "/tmp/", "\\temp\\",
                   "/desktop/", "\\desktop\\")
-
 SKIP_DIR_NAMES = {
     "node_modules", "__pycache__", ".git", ".svn", ".hg", ".tox", ".venv",
     "venv", ".m2", ".gradle", ".cargo", ".rustup", ".nvm",
@@ -156,7 +125,6 @@ SKIP_DIR_NAMES = {
     "lib32", "bin", "sbin", "etc", "opt", "srv", "var", "Applications",
     "Library", "private",
 }
-
 LINUX_IGNORED_FS = {
     "proc", "sysfs", "devtmpfs", "devpts", "tmpfs", "squashfs", "cgroup",
     "cgroup2", "overlay", "mqueue", "hugetlbfs", "tracefs", "debugfs", "bpf",
@@ -165,16 +133,13 @@ LINUX_IGNORED_FS = {
 }
 LINUX_IGNORED_MP = ("/proc", "/sys", "/dev", "/run", "/boot/efi", "/snap",
                     "/var/lib/docker", "/var/lib/containers")
-
 PROTECTED_EXT = (".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf",
                  ".txt", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".c",
                  ".cpp", ".h", ".hpp", ".java", ".go", ".rs", ".sh", ".sql",
                  ".json", ".yaml", ".yml", ".toml", ".ini", ".conf", ".cfg",
                  ".env", ".db", ".sqlite", ".sqlite3", ".wallet", ".key",
                  ".pem", ".csv", ".ods", ".odt")
-
 USER_DIRS = ("documents", "desktop", "pictures", "music", "videos", "photos")
-
 LOGO = [
     "        -ooo-        ",
     "      +osssso+      ",
@@ -192,13 +157,9 @@ LOGO = [
 ]
 LOGO_W = 21
 INFO_LINES: list[str] = []
-
-
 def render_info_lines() -> list[str]:
     info = detect_info()
     return [f"{CY}{k:>7}{N}{D}  {B}{v}{N}" for k, v in info.items()]
-
-
 def intro() -> None:
     if not _TTY or os.environ.get("OPT_NO_ANIM"):
         print_info_block()
@@ -229,16 +190,12 @@ def intro() -> None:
     finally:
         sys.stdout.write("\033[?25h")
         sys.stdout.flush()
-
-
 def print_info_block() -> None:
     art_h = len(LOGO)
     for r in range(max(art_h, len(INFO_LINES))):
         art = LOGO[r] if r < art_h else " " * LOGO_W
         info = INFO_LINES[r] if r < len(INFO_LINES) else ""
         out(f"   {G}{art}{N}  {info}")
-
-
 def detect_info() -> dict[str, str]:
     info: dict[str, str] = {}
     info["OS"] = f"{platform.system()} {platform.release()}"
@@ -253,8 +210,6 @@ def detect_info() -> dict[str, str]:
     info["RAM"] = ram()
     info["Disks"] = disks_summary()
     return info
-
-
 def fmt_uptime(secs) -> str:
     m, s = divmod(int(secs), 60)
     h, m = divmod(m, 60)
@@ -264,8 +219,6 @@ def fmt_uptime(secs) -> str:
     if h:
         return f"{h}h {m}m"
     return f"{m}m {s}s"
-
-
 def uptime() -> str:
     try:
         if IS_LINUX:
@@ -284,13 +237,9 @@ def uptime() -> str:
     except Exception:
         pass
     return "unknown"
-
-
 def with_threads(cpu: str) -> str:
     n = os.cpu_count() or 0
     return f"{cpu} ({n} threads)" if n else cpu
-
-
 def cpu() -> str:
     try:
         if IS_LINUX and os.path.exists("/proc/cpuinfo"):
@@ -310,8 +259,6 @@ def cpu() -> str:
         return with_threads(platform.processor() or platform.machine())
     except Exception:
         return "unknown"
-
-
 def ram() -> str:
     try:
         if IS_LINUX:
@@ -332,8 +279,6 @@ def ram() -> str:
     except Exception:
         pass
     return "unknown"
-
-
 def gpu() -> str:
     try:
         if IS_LINUX:
@@ -359,16 +304,12 @@ def gpu() -> str:
     except Exception:
         pass
     return "unknown"
-
-
 def safe_read(path: str) -> str:
     try:
         with open(path, "r", errors="replace") as f:
             return f.read()
     except Exception:
         return ""
-
-
 def list_mounts() -> list[dict[str, str]]:
     mounts: list[dict[str, str]] = []
     try:
@@ -400,8 +341,6 @@ def list_mounts() -> list[dict[str, str]]:
     except Exception:
         pass
     return mounts
-
-
 def disks_summary() -> str:
     parts, seen = [], set()
     for p in list_mounts():
@@ -415,8 +354,6 @@ def disks_summary() -> str:
         except Exception:
             parts.append(dev)
     return trunc(", ".join(parts) or "none", 56)
-
-
 def find_drives() -> dict[str, list[str]]:
     fixed: list[str] = []
     usb: list[str] = []
@@ -459,7 +396,6 @@ def find_drives() -> dict[str, list[str]]:
         pass
     fixed = [mp for mp in fixed if os.path.isdir(mp)]
     usb = [mp for mp in usb if os.path.isdir(mp)]
-
     def uniq(seq):
         seen, o = set(), []
         for x in seq:
@@ -467,10 +403,7 @@ def find_drives() -> dict[str, list[str]]:
                 seen.add(x)
                 o.append(x)
         return o
-
     return {"fixed": uniq(fixed), "usb": uniq(usb)}
-
-
 def nested_under(root: str, roots: list[str]) -> bool:
     for r in roots:
         if r == root:
@@ -482,8 +415,6 @@ def nested_under(root: str, roots: list[str]) -> bool:
         except Exception:
             pass
     return False
-
-
 def entropy(data: bytes) -> float:
     if not data:
         return 0.0
@@ -497,16 +428,12 @@ def entropy(data: bytes) -> float:
             p = c / n
             ent -= p * math.log2(p)
     return ent
-
-
 def entropy_sample(path: str) -> float:
     try:
         with open(path, "rb") as f:
             return entropy(f.read(64 * 1024))
     except Exception:
         return 0.0
-
-
 def classify(path: str, size: int) -> str:
     if size > MAX_FILE_SIZE:
         return ""
@@ -535,8 +462,6 @@ def classify(path: str, size: int) -> str:
                 and entropy_sample(path) > 7.3:
             return "suspect"
     return ""
-
-
 def walk_root(root: str, result: ScanResult, progress=None) -> int:
     t0 = time.time()
     deadline = t0 + WALK_TIMEOUT
@@ -579,8 +504,6 @@ def walk_root(root: str, result: ScanResult, progress=None) -> int:
     if stack:
         out(f"  {D}   (walk time limit reached on {root}){N}")
     return result.file_count
-
-
 def partial_hash(path: str) -> str | None:
     try:
         h = hashlib.blake2b(digest_size=16)
@@ -589,8 +512,6 @@ def partial_hash(path: str) -> str | None:
         return h.hexdigest()
     except Exception:
         return None
-
-
 def full_hash(path: str) -> str | None:
     try:
         h = hashlib.blake2b(digest_size=16)
@@ -603,15 +524,11 @@ def full_hash(path: str) -> str | None:
         return h.hexdigest()
     except Exception:
         return None
-
-
 def mtime_of(path: str) -> float:
     try:
         return os.path.getmtime(path)
     except Exception:
         return 0.0
-
-
 def find_duplicates(files_by_size: dict[int, list[str]]) -> list[DupGroup]:
     groups: list[DupGroup] = []
     t0 = time.time()
@@ -641,8 +558,6 @@ def find_duplicates(files_by_size: dict[int, list[str]]) -> list[DupGroup]:
                     grp.sort(key=lambda p: (mtime_of(p), p))
                     groups.append(DupGroup(size=size, paths=grp))
     return groups
-
-
 def looks_important(path: str) -> bool:
     lp = path.lower()
     name = os.path.basename(lp)
@@ -655,8 +570,6 @@ def looks_important(path: str) -> bool:
             if not name.endswith(JUNK_EXT_TUPLE):
                 return True
     return False
-
-
 def safe_delete(path: str) -> tuple[bool, int]:
     try:
         st = os.lstat(path)
@@ -668,8 +581,6 @@ def safe_delete(path: str) -> tuple[bool, int]:
         return (True, st.st_size)
     except Exception:
         return (False, 0)
-
-
 def delete_approved(path: str) -> tuple[bool, int]:
     try:
         st = os.lstat(path)
@@ -679,8 +590,6 @@ def delete_approved(path: str) -> tuple[bool, int]:
         return (True, st.st_size)
     except Exception:
         return (False, 0)
-
-
 def quarantine(path: str) -> bool:
     try:
         os.makedirs(QUARANTINE_DIR, exist_ok=True)
@@ -696,8 +605,6 @@ def quarantine(path: str) -> bool:
         return True
     except Exception:
         return False
-
-
 def restore_quarantined() -> int:
     qdir = Path(QUARANTINE_DIR)
     if not qdir.is_dir():
@@ -727,8 +634,6 @@ def restore_quarantined() -> int:
             continue
     out(f"  restored {restored} file(s) from {QUARANTINE_DIR}")
     return restored
-
-
 def temp_dirs() -> list[str]:
     dirs = {tempfile.gettempdir()}
     if IS_LINUX:
@@ -740,8 +645,6 @@ def temp_dirs() -> list[str]:
     elif IS_MACOS:
         dirs.add("/private/var/tmp")
     return [d for d in dirs if os.path.isdir(d)]
-
-
 def clear_temp_dirs() -> tuple[int, int]:
     n, b = 0, 0
     now = time.time()
@@ -770,8 +673,6 @@ def clear_temp_dirs() -> tuple[int, int]:
             except Exception:
                 continue
     return n, b
-
-
 def clear_pkg_caches() -> tuple[int, int]:
     n, b = 0, 0
     home = os.path.expanduser("~")
@@ -793,8 +694,6 @@ def clear_pkg_caches() -> tuple[int, int]:
                     n += 1
                     b += sz
     return n, b
-
-
 def optimize_wifi() -> str:
     if IS_LINUX:
         if shutil.which("nmcli"):
@@ -810,8 +709,6 @@ def optimize_wifi() -> str:
         run("networksetup -setv6off Wi-Fi", timeout=20)
         return "wifi checked (ipv6 off for snappier dns)"
     return "unsupported platform"
-
-
 def optimize_os() -> str:
     msgs: list[str] = []
     if IS_LINUX:
@@ -842,8 +739,6 @@ def optimize_os() -> str:
         run("purge", timeout=60)
         msgs.append("memory purge attempted")
     return "; ".join(msgs)
-
-
 def list_startup() -> list[str]:
     items: list[str] = []
     try:
@@ -864,20 +759,14 @@ def list_startup() -> list[str]:
     except Exception:
         pass
     return items
-
-
 def size_of(path: str) -> int:
     try:
         return os.lstat(path).st_size
     except Exception:
         return 0
-
-
 def progress_cb(count: int) -> None:
     sys.stdout.write(f"\r  {D}files seen: {count:>8}{N}")
     sys.stdout.flush()
-
-
 def report(drives, result: ScanResult, dups: list[DupGroup]) -> None:
     redundant = sum(len(g.paths) - 1 for g in dups)
     wasted = sum((len(g.paths) - 1) * g.size for g in dups)
@@ -897,8 +786,6 @@ def report(drives, result: ScanResult, dups: list[DupGroup]) -> None:
     if len(dups) > 5:
         out(f"    ... and {len(dups) - 5} more sets")
     out()
-
-
 def approve(result: ScanResult, dups: list[DupGroup], auto: bool,
             force_quarantine: bool) -> Plan:
     plan = Plan()
@@ -936,8 +823,6 @@ def approve(result: ScanResult, dups: list[DupGroup], auto: bool,
     if "3" in choice:
         plan.quarantine = list(result.suspects)
     return plan
-
-
 def execute_plan(plan: Plan) -> tuple[int, int, int, int]:
     freed = 0
     n_junk = n_dup = n_q = 0
@@ -968,8 +853,6 @@ def execute_plan(plan: Plan) -> tuple[int, int, int, int]:
         if n_q:
             out(f"  {D}to restore: python3 opt.py --restore{N}")
     return freed, n_junk, n_dup, n_q
-
-
 def write_session_log() -> str:
     stamp = time.strftime("%Y%m%d_%H%M%S")
     base = f"opt_log_{stamp}.txt"
@@ -982,8 +865,6 @@ def write_session_log() -> str:
         return path
     except Exception:
         return "<log write failed>"
-
-
 def main() -> int:
     global INFO_LINES
     ap = argparse.ArgumentParser(prog="opt.py",
@@ -1001,24 +882,19 @@ def main() -> int:
     ap.add_argument("--roots", nargs="*", default=None,
                     help="override drive discovery with these paths")
     args = ap.parse_args()
-
     enable_windows_ansi()
-
     if args.restore:
         out(f"{B}opt.py{N} {D}v{VERSION}{N} - quarantine restore")
         restore_quarantined()
         return 0
-
     INFO_LINES = render_info_lines()
     if args.no_anim:
         print_info_block()
     else:
         intro()
-
     out()
     out(f"{B}opt.py{N} {D}v{VERSION}{N} - auto-detect, clean & optimize")
     out(f"{D}  warning: heuristic scanner, not a substitute for a real antivirus{N}")
-
     drives = find_drives()
     if args.roots:
         drives = {"fixed": [os.path.abspath(p) for p in args.roots], "usb": []}
@@ -1028,7 +904,6 @@ def main() -> int:
         if env_roots:
             drives = {"fixed": env_roots, "usb": []}
             out(f"  {Y}OPT_ROOTS override active: {', '.join(env_roots)}{N}")
-
     all_mp = drives["fixed"] + drives["usb"]
     out(f"  Drives: {G}{', '.join(all_mp) or 'none found'}{N}")
     if drives["usb"]:
@@ -1036,10 +911,8 @@ def main() -> int:
     if not all_mp:
         out(f"{R}  No scannable drives found.{N}")
         return 1
-
     result = ScanResult()
     scanned: list[str] = []
-
     out()
     out(f"{B}[1/5] Scanning fixed drives...{N}")
     for mp in drives["fixed"]:
@@ -1050,7 +923,6 @@ def main() -> int:
         walk_root(mp, result, progress=progress_cb)
         sys.stdout.write("\r\033[K")
         scanned.append(mp)
-
     if drives["usb"]:
         out()
         out(f"{B}[2/5] Scanning USB drives...{N}")
@@ -1065,14 +937,11 @@ def main() -> int:
             autorun = os.path.join(mp, "autorun.inf")
             if os.path.isfile(autorun) and os.path.getsize(autorun) > 0:
                 result.suspects.append(autorun)
-
     out()
     out(f"{B}[3/5] Finding duplicates (size -> partial hash -> full hash, parallel)...{N}")
     dups = find_duplicates(result.files_by_size)
     out(f"  done: {len(dups)} sets, {sum(len(g.paths) - 1 for g in dups)} redundant")
-
     report(drives, result, dups)
-
     freed = n_junk = n_dup = n_q = 0
     if args.scan_only:
         out(f"{B}[4/5] Scan-only mode: no changes made.{N}")
@@ -1093,7 +962,6 @@ def main() -> int:
         log_file = write_session_log()
         out(f"  log saved to    : {log_file}")
         return 0
-
     out()
     out(f"{B}[5/5] Optimizing...{N}")
     n_tmp, b_tmp = clear_temp_dirs()
@@ -1106,7 +974,6 @@ def main() -> int:
     if startup:
         out(f"  startup ({len(startup)} autostart items, review for snappiness): "
             f"{trunc(', '.join(startup), 70)}")
-
     out()
     out(f"{B}================ SUMMARY ================{N}")
     out(f"  junk removed    : {n_junk}")
@@ -1117,8 +984,6 @@ def main() -> int:
     log_file = write_session_log()
     out(f"  log saved to    : {log_file}")
     return 0
-
-
 if __name__ == "__main__":
     try:
         sys.exit(main())
